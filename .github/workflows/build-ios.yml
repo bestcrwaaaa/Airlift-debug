@@ -1,0 +1,79 @@
+name: Build unsigned IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - "rust-core/**"
+      - "ios-app/**"
+      - "project.yml"
+      - "tools/**"
+      - "build-ios.sh"
+      - "build-ipa.sh"
+      - ".github/workflows/build-ios.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ipa:
+    name: Build AirLiftDebug.ipa
+    # Needs Xcode 16+ for the iOS 18 SDK. macos-14 ships Xcode 15.4 / iOS 17.5,
+    # which cannot build a deploymentTarget of 18.0.
+    runs-on: macos-15
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select the newest Xcode on the runner
+        run: |
+          set -euo pipefail
+          latest="$(ls -d /Applications/Xcode*.app | sort -V | tail -n1)"
+          echo "Selected: $latest"
+          sudo xcode-select -s "$latest"
+          echo "DEVELOPER_DIR=$latest/Contents/Developer" >> "$GITHUB_ENV"
+          xcodebuild -version
+
+      - name: Check the localisation files
+        run: python3 tools/check-strings.py
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Install Rust + iOS targets
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+            | sh -s -- -y --default-toolchain stable --profile minimal
+          source "$HOME/.cargo/env"
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+          rustc --version
+
+      - name: Cache Rust build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust-core/target
+          key: rust-ios-${{ hashFiles('rust-core/Cargo.toml', 'rust-core/Cargo.lock') }}
+          restore-keys: rust-ios-
+
+      - name: Build Rust core and repackage AirliftFFI.xcframework
+        run: ./build-ios.sh
+
+      - name: Build unsigned IPA
+        run: ./build-ipa.sh Release
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: AirLiftDebug-unsigned-ipa
+          path: build/AirLiftDebug.ipa
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Show artifact size
+        run: ls -lh build/AirLiftDebug.ipa

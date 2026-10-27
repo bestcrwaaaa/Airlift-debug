@@ -1,0 +1,50 @@
+name: AirLiftDebug
+options:
+  bundleIdPrefix: com.yihoooong
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+  # Pin the project format. XcodeGen's default moves with its own releases, and a
+  # project written by a newer XcodeGen than the runner's Xcode cannot be opened
+  # ("future Xcode project file format"). xcode16_0 is readable by Xcode 16+.
+  projectFormat: xcode16_0
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.2.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1"
+    # AirliftFFI is arm64-only (aws-lc-rs / idevice); drop the x86_64 simulator slice.
+    EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  AirLiftDebug:
+    type: application
+    platform: iOS
+    sources:
+      # Resource files carry a "silent-"/"original-" prefix so every name is
+      # unique. XcodeGen flattens directory contents into the bundle root, and
+      # both sets used to hold StartDisclosureWithTone.m4a, which Xcode rejects
+      # with "Multiple commands produce …". The staging step renames them back.
+      - path: ios-app
+    dependencies:
+      - framework: AirliftFFI.xcframework
+        embed: false
+    settings:
+      base:
+        PRODUCT_NAME: "AirLiftDebug"
+        PRODUCT_BUNDLE_IDENTIFIER: com.yihoooong.airliftdebug
+        INFOPLIST_FILE: ios-app/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # idevice's static lib pulls in C++ symbols (aws-lc); link libc++.
+        OTHER_LDFLAGS: "-lc++"
+        GENERATE_INFOPLIST_FILE: NO
+
+schemes:
+  AirLiftDebug:
+    build:
+      targets:
+        AirLiftDebug: all
